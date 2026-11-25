@@ -16,15 +16,10 @@ html, body {
   height: 100%;
   background: #fff;
   overflow: hidden;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: system-ui, sans-serif;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
-}
-
-canvas {
-  touch-action: none;
-  display: block;
 }
 
 #ui {
@@ -55,7 +50,7 @@ canvas {
 #ui button,
 #ui label.btn-archivo {
   font: inherit;
-  padding: 9px 13px;
+  padding: 9px 14px;
   border: 1px solid #222;
   background: rgba(255, 255, 255, 0.92);
   color: #222;
@@ -72,11 +67,6 @@ canvas {
   background: #eee;
 }
 
-#ui button:active,
-#ui label.btn-archivo:active {
-  background: #ddd;
-}
-
 #ui input[type="file"] {
   display: none;
 }
@@ -87,6 +77,7 @@ canvas {
   gap: 8px;
 }
 
+/* Lista vertical de colores */
 .paleta {
   display: flex;
   flex-direction: column;
@@ -118,20 +109,9 @@ canvas {
   background: linear-gradient(135deg, #ffffff 0%, #9fa6b2 45%, #e5e7eb 65%, #525866 100%);
 }
 
-.prof-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #222;
-  border-radius: 6px;
-}
-
-.prof-box input[type="range"] {
-  width: 110px;
-  accent-color: #222;
-  touch-action: pan-x;
+canvas {
+  touch-action: none;
+  display: block;
 }
 
 @media (max-width: 600px) {
@@ -141,14 +121,10 @@ canvas {
     left: 10px;
     right: 10px;
     justify-content: space-between;
-    font-size: 13px;
   }
 
   .herramientas {
     order: 1;
-    width: 100%;
-    justify-content: space-between;
-    align-items: flex-start;
   }
 
   .acciones {
@@ -160,27 +136,7 @@ canvas {
   .acciones label.btn-archivo {
     flex: 1 1 46%;
     padding: 10px 8px;
-  }
-
-  .paleta {
-    gap: 5px;
-    padding: 5px;
-  }
-
-  .swatch {
-    width: 27px;
-    height: 27px;
-  }
-
-  .prof-box {
-    flex-direction: column;
-    align-items: stretch;
-    width: 135px;
-    gap: 4px;
-  }
-
-  .prof-box input[type="range"] {
-    width: 100%;
+    font-size: 13px;
   }
 }
 </style>
@@ -200,21 +156,16 @@ canvas {
 <div id="ui">
   <div class="acciones">
     <button id="btnModo" type="button">Dibujar</button>
-    <label class="btn-archivo" for="archivoFondo">Fondo</label>
+    <label class="btn-archivo" for="archivoFondo">Importar fondo</label>
     <button id="btnFondoBlanco" type="button" style="display: none;">Quitar fondo</button>
-    <button id="btnGuardar" type="button">Guardar</button>
-    <button id="btnBorrar" type="button">Borrar</button>
+    <button id="btnGuardar" type="button">Guardar creación</button>
+    <button id="btnBorrar" type="button">Borrar todo</button>
   </div>
 
   <input id="archivoFondo" type="file" accept="image/*">
 
   <div class="herramientas">
     <div class="paleta" id="paleta"></div>
-
-    <div class="prof-box" id="profBox">
-      <label for="sliderProf">Profundidad: <span id="valProf">0.0</span></label>
-      <input id="sliderProf" type="range" min="-3" max="3" step="0.1" value="0">
-    </div>
   </div>
 </div>
 
@@ -222,11 +173,13 @@ canvas {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// 1. ESCENA Y CÁMARA
+// 1. ESCENA
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
 
-const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(
+  50, innerWidth / innerHeight, 0.1, 100
+);
 camera.position.set(0, 0, 4);
 
 // 2. RENDERER
@@ -241,7 +194,7 @@ document.body.appendChild(renderer.domElement);
 const canvas = renderer.domElement;
 canvas.style.touchAction = 'none';
 
-// Entorno sintético liviano para reflejos del color metalizado
+// Entorno sintético para reflejos del color metalizado
 function crearEntornoReflejo() {
   const c = document.createElement('canvas');
   c.width = 256;
@@ -274,8 +227,11 @@ scene.environment = crearEntornoReflejo();
 scene.environmentIntensity = 0.7;
 
 // 3. ILUMINACIÓN
-scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 0.95));
-const sol = new THREE.DirectionalLight(0xffffff, 1.9);
+scene.add(
+  new THREE.HemisphereLight(0xffffff, 0x999999, 1.0)
+);
+
+const sol = new THREE.DirectionalLight(0xffffff, 2.2);
 sol.position.set(3, 5, 4);
 scene.add(sol);
 
@@ -296,7 +252,7 @@ controls.enabled = false;
 
 // 5. PALETA VERTICAL + METALIZADO
 const COLORES = [
-  { nombre: 'Crema', hex: '#f7f3e8', metal: false },
+  { nombre: 'Crema', hex: null, metal: false },
   { nombre: 'Negro', hex: '#222222', metal: false },
   { nombre: 'Rojo', hex: '#e63946', metal: false },
   { nombre: 'Naranja', hex: '#f77f00', metal: false },
@@ -316,7 +272,9 @@ COLORES.forEach((c, idx) => {
   btn.type = 'button';
   btn.className = 'swatch' + (c.metal ? ' metal' : '') + (idx === 0 ? ' activo' : '');
   btn.title = c.nombre;
-  if (!c.metal) btn.style.backgroundColor = c.hex;
+  if (!c.metal) {
+    btn.style.backgroundColor = c.hex || '#f5f2e8';
+  }
 
   btn.addEventListener('click', () => {
     colorActual = c;
@@ -326,13 +284,16 @@ COLORES.forEach((c, idx) => {
   paletaEl.appendChild(btn);
 });
 
-// 6. ESPUMA 3D (MATE + METALIZADA)
-const MAX = 25000;
+// 6. ESPUMA 3D
+const MAX = 30000;
 const geoEsfera = new THREE.SphereGeometry(1, 12, 12);
 
 const espumaMate = new THREE.InstancedMesh(
   geoEsfera,
-  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0.05 }),
+  new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.9
+  }),
   MAX
 );
 espumaMate.count = 0;
@@ -340,7 +301,11 @@ scene.add(espumaMate);
 
 const espumaMetal = new THREE.InstancedMesh(
   geoEsfera,
-  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0.88 }),
+  new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.22,
+    metalness: 0.88
+  }),
   MAX
 );
 espumaMetal.count = 0;
@@ -349,23 +314,30 @@ scene.add(espumaMetal);
 const m = new THREE.Matrix4();
 const color = new THREE.Color();
 
-function agregarBola(pos, factorTamano = 1) {
+// 7. AGREGAR ESFERITAS
+function agregarBola(pos) {
   const mesh = colorActual.metal ? espumaMetal : espumaMate;
   if (mesh.count >= MAX) return;
 
-  const radio = (0.045 + Math.random() * 0.055) * factorTamano;
-  const dispersion = 0.04 * factorTamano;
+  const radio = 0.05 + Math.random() * 0.06;
 
   m.makeScale(radio, radio, radio);
   m.setPosition(
-    pos.x + (Math.random() - 0.5) * dispersion,
-    pos.y + (Math.random() - 0.5) * dispersion,
-    pos.z + (Math.random() - 0.5) * dispersion
+    pos.x + (Math.random() - 0.5) * 0.04,
+    pos.y + (Math.random() - 0.5) * 0.04,
+    pos.z + (Math.random() - 0.5) * 0.04
   );
+
   mesh.setMatrixAt(mesh.count, m);
 
-  color.set(colorActual.hex);
-  color.offsetHSL(0, 0, (Math.random() - 0.5) * 0.06);
+  if (colorActual.hex === null) {
+    const t = 0.88 + Math.random() * 0.12;
+    color.setRGB(t, t * 0.98, t * 0.92);
+  } else {
+    color.set(colorActual.hex);
+    color.offsetHSL(0, 0, (Math.random() - 0.5) * 0.05);
+  }
+
   mesh.setColorAt(mesh.count, color);
 
   mesh.count++;
@@ -373,157 +345,200 @@ function agregarBola(pos, factorTamano = 1) {
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 }
 
-// 7. DIBUJO UNIFICADO (DEDO Y MOUSE) + CRECIMIENTO AL MANTENER
+// 8. SISTEMA DE DIBUJO
 let dibujando = true;
 let trazoActivo = false;
-let punteroActivoId = null;
 let profundidad = 0;
 let ultimo = null;
-let puntoActual = null;
-let tiempoPresionado = 0;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const plano = new THREE.Plane();
 const punto = new THREE.Vector3();
-const dirAux = new THREE.Vector3();
-const centroAux = new THREE.Vector3();
-const normalAux = new THREE.Vector3();
 
-function puntoBajoPuntero(e) {
+// 9. POSICIÓN DEL DEDO O MOUSE
+function puntoBajoMouse(e) {
   const rect = canvas.getBoundingClientRect();
+
   mouse.set(
     ((e.clientX - rect.left) / rect.width) * 2 - 1,
     -((e.clientY - rect.top) / rect.height) * 2 + 1
   );
 
   raycaster.setFromCamera(mouse, camera);
-  camera.getWorldDirection(dirAux);
-  centroAux.copy(controls.target).addScaledVector(dirAux, profundidad);
-  normalAux.copy(dirAux).negate();
-  plano.setFromNormalAndCoplanarPoint(normalAux, centroAux);
 
-  return raycaster.ray.intersectPlane(plano, punto) ? punto.clone() : null;
+  const dir = camera.getWorldDirection(
+    new THREE.Vector3()
+  );
+
+  const centro = controls.target.clone()
+    .addScaledVector(dir, profundidad);
+
+  plano.setFromNormalAndCoplanarPoint(
+    dir.clone().negate(),
+    centro
+  );
+
+  const resultado = raycaster.ray.intersectPlane(
+    plano, punto
+  );
+
+  return resultado ? punto.clone() : null;
 }
 
-function factorPorTiempo() {
-  return Math.min(1 + tiempoPresionado * 1.1, 3.2);
-}
-
+// 10. TRAZOS CONTINUOS
 function dibujarHasta(p) {
-  const factor = factorPorTiempo();
   if (!ultimo) {
-    agregarBola(p, factor);
+    agregarBola(p);
     ultimo = p;
     return;
   }
 
   const dist = ultimo.distanceTo(p);
-  const pasoBase = 0.038 * Math.max(1, factor * 0.7);
-  const pasos = Math.max(1, Math.ceil(dist / pasoBase));
+  const pasos = Math.max(1, Math.ceil(dist / 0.04));
 
   for (let i = 1; i <= pasos; i++) {
-    const interpolado = new THREE.Vector3().lerpVectors(ultimo, p, i / pasos);
-    agregarBola(interpolado, factor);
+    const interpolado = new THREE.Vector3()
+      .lerpVectors(ultimo, p, i / pasos);
+
+    agregarBola(interpolado);
   }
+
   ultimo = p;
 }
 
+// 11. DIBUJO CON MOUSE
 canvas.addEventListener('pointerdown', (e) => {
-  if (!dibujando || trazoActivo) return;
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  if (!dibujando || e.pointerType === 'touch') return;
 
   e.preventDefault();
   trazoActivo = true;
-  punteroActivoId = e.pointerId;
-  tiempoPresionado = 0;
   ultimo = null;
 
   try {
     canvas.setPointerCapture(e.pointerId);
-  } catch (err) {}
+  } catch (error) {}
 
-  const p = puntoBajoPuntero(e);
-  if (p) {
-    puntoActual = p;
-    dibujarHasta(p);
-  }
+  const p = puntoBajoMouse(e);
+  if (p) dibujarHasta(p);
 }, { passive: false });
 
 canvas.addEventListener('pointermove', (e) => {
-  if (!dibujando || !trazoActivo || e.pointerId !== punteroActivoId) return;
+  if (!dibujando || !trazoActivo || e.pointerType === 'touch') return;
 
   e.preventDefault();
-  const p = puntoBajoPuntero(e);
-  if (p) {
-    puntoActual = p;
-    dibujarHasta(p);
-  }
+
+  const p = puntoBajoMouse(e);
+  if (p) dibujarHasta(p);
 }, { passive: false });
 
-function finalizarTrazo(e) {
-  if (e && punteroActivoId !== null && e.pointerId !== undefined && e.pointerId !== punteroActivoId) {
-    return;
-  }
+function finalizarTrazo() {
   trazoActivo = false;
-  punteroActivoId = null;
   ultimo = null;
-  puntoActual = null;
-  tiempoPresionado = 0;
 }
 
 canvas.addEventListener('pointerup', finalizarTrazo);
 canvas.addEventListener('pointercancel', finalizarTrazo);
-canvas.addEventListener('lostpointercapture', () => finalizarTrazo());
+canvas.addEventListener('lostpointercapture', finalizarTrazo);
 
-// Previene scroll/rebote en Safari iOS y Android WebView mientras dibujás
-canvas.addEventListener('touchstart', (e) => { if (dibujando) e.preventDefault(); }, { passive: false });
-canvas.addEventListener('touchmove', (e) => { if (dibujando) e.preventDefault(); }, { passive: false });
+// 12. DIBUJO TÁCTIL DEDICADO
+let dedoDibujoId = null;
 
-// 8. PROFUNDIDAD (RUEDA Y SLIDER)
-const sliderProf = document.getElementById('sliderProf');
-const valProf = document.getElementById('valProf');
-const profBox = document.getElementById('profBox');
-
-function setProfundidad(nuevoValor) {
-  profundidad = THREE.MathUtils.clamp(nuevoValor, -3, 3);
-  sliderProf.value = profundidad.toFixed(1);
-  valProf.textContent = profundidad.toFixed(1);
+function posicionDesdeTouch(touch) {
+  return {
+    clientX: touch.clientX,
+    clientY: touch.clientY
+  };
 }
 
-canvas.addEventListener('wheel', (e) => {
-  if (!dibujando) return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  setProfundidad(profundidad + e.deltaY * 0.002);
-}, { passive: false, capture: true });
+canvas.addEventListener('touchstart', (e) => {
+  if (!dibujando || e.touches.length !== 1) return;
 
-sliderProf.addEventListener('input', (e) => {
-  setProfundidad(parseFloat(e.target.value));
+  e.preventDefault();
+
+  const touch = e.changedTouches[0];
+  dedoDibujoId = touch.identifier;
+
+  trazoActivo = true;
+  ultimo = null;
+
+  const p = puntoBajoMouse(posicionDesdeTouch(touch));
+  if (p) dibujarHasta(p);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  if (!dibujando || dedoDibujoId === null) return;
+
+  e.preventDefault();
+
+  for (const touch of e.changedTouches) {
+    if (touch.identifier !== dedoDibujoId) continue;
+
+    const p = puntoBajoMouse(posicionDesdeTouch(touch));
+    if (p) dibujarHasta(p);
+    break;
+  }
+}, { passive: false });
+
+function finalizarTouchDibujo(e) {
+  if (dedoDibujoId === null) return;
+
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === dedoDibujoId) {
+      dedoDibujoId = null;
+      finalizarTrazo();
+      break;
+    }
+  }
+}
+
+canvas.addEventListener('touchend', finalizarTouchDibujo, {
+  passive: false
 });
 
-// 9. MODOS Y ACCIONES
+canvas.addEventListener('touchcancel', finalizarTouchDibujo, {
+  passive: false
+});
+
+// 13. PROFUNDIDAD CON RUEDA DEL MOUSE
+canvas.addEventListener('wheel', (e) => {
+  if (!dibujando) return;
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+
+  profundidad = THREE.MathUtils.clamp(
+    profundidad + e.deltaY * 0.002, -3, 3
+  );
+}, { passive: false, capture: true });
+
+// 14. CAMBIAR MODO
 const btnModo = document.getElementById('btnModo');
 
 function cambiarModo() {
   dibujando = !dibujando;
   controls.enabled = !dibujando;
-  finalizarTrazo();
+  trazoActivo = false;
+  dedoDibujoId = null;
+  ultimo = null;
   btnModo.textContent = dibujando ? 'Dibujar' : 'Mover';
-  profBox.style.display = dibujando ? 'flex' : 'none';
 }
 
+// 15. BORRAR
 function borrarTodo() {
   espumaMate.count = 0;
   espumaMetal.count = 0;
   espumaMate.instanceMatrix.needsUpdate = true;
   espumaMetal.instanceMatrix.needsUpdate = true;
+  if (espumaMate.instanceColor) espumaMate.instanceColor.needsUpdate = true;
+  if (espumaMetal.instanceColor) espumaMetal.instanceColor.needsUpdate = true;
 }
 
+// 16. BOTONES
 btnModo.addEventListener('click', cambiarModo);
 document.getElementById('btnBorrar').addEventListener('click', borrarTodo);
 
-// 10. IMPORTAR Y QUITAR FONDO
+// 17. IMPORTAR Y QUITAR FONDO
 const archivoFondo = document.getElementById('archivoFondo');
 const btnFondoBlanco = document.getElementById('btnFondoBlanco');
 let urlFondoActual = null;
@@ -563,9 +578,8 @@ btnFondoBlanco.addEventListener('click', () => {
   btnFondoBlanco.style.display = 'none';
 });
 
-// 11. GUARDAR PNG
+// 18. GUARDAR PNG
 document.getElementById('btnGuardar').addEventListener('click', () => {
-  controls.update();
   renderer.render(scene, camera);
 
   renderer.domElement.toBlob((blob) => {
@@ -576,16 +590,19 @@ document.getElementById('btnGuardar').addEventListener('click', () => {
 
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+
     a.href = url;
     a.download = 'espuma-3d.png';
+
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
   }, 'image/png');
 });
 
-// 12. TECLADO
+// 19. TECLADO
 addEventListener('keydown', (e) => {
   if (e.code === 'Space' && e.target.tagName !== 'BUTTON') {
     e.preventDefault();
@@ -593,31 +610,20 @@ addEventListener('keydown', (e) => {
   }
 });
 
-// 13. LOOP DE ANIMACIÓN
-const clock = new THREE.Clock();
-
+// 20. ANIMACIÓN
 function animar() {
   requestAnimationFrame(animar);
-  const dt = clock.getDelta();
-
-  if (dibujando && trazoActivo && puntoActual) {
-    tiempoPresionado += dt;
-    const factor = factorPorTiempo();
-    if (Math.random() < 0.75) {
-      agregarBola(puntoActual, factor);
-    }
-  }
-
   controls.update();
   renderer.render(scene, camera);
 }
 
 animar();
 
-// 14. REDIMENSIONAR
+// 21. REDIMENSIONAR
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 });
