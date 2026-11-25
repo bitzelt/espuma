@@ -1,0 +1,606 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Espuma 3D</title>
+
+<style>
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #fff;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#ui {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  color: #222;
+  font-size: 14px;
+  z-index: 10;
+}
+
+/* Distribución compacta para teléfonos */
+@media (max-width: 600px) {
+  #ui {
+    display: contents;
+  }
+
+  #ui button {
+    position: fixed;
+    z-index: 10;
+    width: calc(50vw - 18px);
+    min-height: 46px;
+    padding: 10px 8px;
+    font-size: 14px;
+    box-sizing: border-box;
+    white-space: nowrap;
+  }
+
+  #btnModo {
+    top: 10px;
+    left: 10px;
+  }
+
+  #btnFondo {
+    top: 10px;
+    right: 10px;
+  }
+
+  #btnGuardar {
+    bottom: 10px;
+    left: 10px;
+  }
+
+  #btnBorrar {
+    bottom: 10px;
+    right: 10px;
+  }
+
+  #estado {
+    position: fixed;
+    top: 62px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9;
+    max-width: calc(100vw - 32px);
+    font-size: 12px;
+    text-align: center;
+  }
+}
+
+#ui button {
+  font: inherit;
+  padding: 9px 14px;
+  border: 1px solid #222;
+  background: #fff;
+  cursor: pointer;
+  border-radius: 6px;
+  touch-action: manipulation;
+}
+
+#ui button:hover {
+  background: #eee;
+}
+
+#ui input[type="file"] {
+  display: none;
+}
+
+#estado {
+  line-height: 1.5;
+  background: rgba(255,255,255,0.85);
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+canvas {
+  touch-action: none;
+  display: block;
+}
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+
+<body>
+
+<div id="ui">
+  <button id="btnModo">Modo: Dibujar / Mover</button>
+  <button id="btnFondo">Importar fondo</button>
+  <input id="archivoFondo" type="file" accept="image/*">
+  <button id="btnGuardar">Guardar creación</button>
+  <button id="btnBorrar">Borrar todo</button>
+  <div id="estado"></div>
+</div>
+
+<script type="module">
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ==========================================
+// 1. ESCENA Y CÁMARA
+// ==========================================
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+
+const camera = new THREE.PerspectiveCamera(
+  50,
+  innerWidth / innerHeight,
+  0.1,
+  100
+);
+
+camera.position.set(0, 0, 4);
+
+// ==========================================
+// 2. RENDERER
+// ==========================================
+
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  preserveDrawingBuffer: true
+});
+
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const canvas = renderer.domElement;
+canvas.style.touchAction = 'none';
+
+// ==========================================
+// 3. ILUMINACIÓN
+// ==========================================
+
+scene.add(
+  new THREE.HemisphereLight(0xffffff, 0x999999, 1.0)
+);
+
+const sol = new THREE.DirectionalLight(0xffffff, 2.2);
+sol.position.set(3, 5, 4);
+scene.add(sol);
+
+// ==========================================
+// 4. CONTROLES DE MOVIMIENTO Y ZOOM
+// ==========================================
+
+const controls = new OrbitControls(camera, canvas);
+
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// Rotación
+controls.enableRotate = true;
+
+// Zoom
+controls.enableZoom = true;
+
+// Desactivar desplazamiento lateral
+controls.enablePan = false;
+
+// Límites de zoom
+controls.minDistance = 1.5;
+controls.maxDistance = 15;
+
+// Velocidad de rotación
+controls.rotateSpeed = 0.8;
+
+// Zoom suave
+controls.zoomSpeed = 0.8;
+
+// Gestos táctiles
+controls.touches.ONE = THREE.TOUCH.ROTATE;
+controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+
+// Al inicio, los controles de movimiento están apagados
+controls.enabled = false;
+
+// ==========================================
+// 5. ESPUMA 3D
+// ==========================================
+
+const MAX = 30000;
+
+const espuma = new THREE.InstancedMesh(
+  new THREE.SphereGeometry(1, 12, 12),
+  new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.9
+  }),
+  MAX
+);
+
+espuma.count = 0;
+scene.add(espuma);
+
+const m = new THREE.Matrix4();
+const color = new THREE.Color();
+
+// ==========================================
+// 6. AGREGAR ESFERITAS
+// ==========================================
+
+function agregarBola(pos) {
+
+  if (espuma.count >= MAX) return;
+
+  const radio = 0.05 + Math.random() * 0.06;
+
+  m.makeScale(radio, radio, radio);
+
+  m.setPosition(
+    pos.x + (Math.random() - 0.5) * 0.04,
+    pos.y + (Math.random() - 0.5) * 0.04,
+    pos.z + (Math.random() - 0.5) * 0.04
+  );
+
+  espuma.setMatrixAt(espuma.count, m);
+
+  // Variaciones de color blanco y crema
+  const t = 0.88 + Math.random() * 0.12;
+
+  color.setRGB(
+    t,
+    t * 0.98,
+    t * 0.92
+  );
+
+  espuma.setColorAt(espuma.count, color);
+
+  espuma.count++;
+
+  espuma.instanceMatrix.needsUpdate = true;
+  espuma.instanceColor.needsUpdate = true;
+}
+
+// ==========================================
+// 7. SISTEMA DE DIBUJO
+// ==========================================
+
+let dibujando = true;
+let trazoActivo = false;
+let profundidad = 0;
+let ultimo = null;
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+const plano = new THREE.Plane();
+const punto = new THREE.Vector3();
+
+// ==========================================
+// 8. DETECTAR POSICIÓN DEL DEDO O MOUSE
+// ==========================================
+
+function puntoBajoMouse(e) {
+
+  const rect = canvas.getBoundingClientRect();
+
+  mouse.set(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+
+  raycaster.setFromCamera(mouse, camera);
+
+  const dir = camera.getWorldDirection(
+    new THREE.Vector3()
+  );
+
+  const centro = controls.target.clone()
+    .addScaledVector(dir, profundidad);
+
+  plano.setFromNormalAndCoplanarPoint(
+    dir.clone().negate(),
+    centro
+  );
+
+  const resultado = raycaster.ray.intersectPlane(
+    plano,
+    punto
+  );
+
+  return resultado ? punto.clone() : null;
+}
+
+// ==========================================
+// 9. DIBUJAR TRAZOS CONTINUOS
+// ==========================================
+
+function dibujarHasta(p) {
+
+  if (!ultimo) {
+    agregarBola(p);
+    ultimo = p;
+    return;
+  }
+
+  const dist = ultimo.distanceTo(p);
+
+  const pasos = Math.max(
+    1,
+    Math.ceil(dist / 0.04)
+  );
+
+  for (let i = 1; i <= pasos; i++) {
+
+    const interpolado = new THREE.Vector3()
+      .lerpVectors(ultimo, p, i / pasos);
+
+    agregarBola(interpolado);
+  }
+
+  ultimo = p;
+}
+
+// ==========================================
+// 10. EVENTOS DE DIBUJO TÁCTIL
+// ==========================================
+
+canvas.addEventListener('pointerdown', (e) => {
+
+  if (!dibujando) return;
+
+  e.preventDefault();
+
+  trazoActivo = true;
+  ultimo = null;
+
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch (error) {}
+
+  const p = puntoBajoMouse(e);
+
+  if (p) dibujarHasta(p);
+
+}, { passive: false });
+
+
+canvas.addEventListener('pointermove', (e) => {
+
+  if (!dibujando || !trazoActivo) return;
+
+  e.preventDefault();
+
+  const p = puntoBajoMouse(e);
+
+  if (p) dibujarHasta(p);
+
+}, { passive: false });
+
+
+function finalizarTrazo() {
+  trazoActivo = false;
+  ultimo = null;
+}
+
+canvas.addEventListener('pointerup', finalizarTrazo);
+canvas.addEventListener('pointercancel', finalizarTrazo);
+canvas.addEventListener('lostpointercapture', finalizarTrazo);
+
+// ==========================================
+// 11. PROFUNDIDAD CON RUEDA DEL MOUSE
+// ==========================================
+
+canvas.addEventListener('wheel', (e) => {
+
+  if (!dibujando) return;
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+
+  profundidad = THREE.MathUtils.clamp(
+    profundidad + e.deltaY * 0.002,
+    -3,
+    3
+  );
+
+  actualizarEstado();
+
+}, { passive: false, capture: true });
+
+// ==========================================
+// 12. CAMBIAR ENTRE DIBUJAR Y MOVER
+// ==========================================
+
+function cambiarModo() {
+
+  dibujando = !dibujando;
+
+  // En modo Mover activa rotación y zoom
+  controls.enabled = !dibujando;
+
+  trazoActivo = false;
+  ultimo = null;
+
+  actualizarEstado();
+}
+
+// ==========================================
+// 13. BORRAR TODO
+// ==========================================
+
+function borrarTodo() {
+
+  espuma.count = 0;
+  espuma.instanceMatrix.needsUpdate = true;
+  espuma.instanceColor.needsUpdate = true;
+}
+
+// ==========================================
+// 14. INFORMACIÓN DEL MODO
+// ==========================================
+
+const estado = document.getElementById('estado');
+
+function actualizarEstado() {
+
+  if (dibujando) {
+
+    estado.innerHTML =
+      `<b>Modo: Dibujar</b><br>
+       Arrastrá el dedo para crear espuma`;
+
+  } else {
+
+    estado.innerHTML =
+      `<b>Modo: Mover</b><br>
+       Un dedo: rotar<br>
+       Dos dedos: zoom`;
+  }
+}
+
+// ==========================================
+// 15. BOTONES
+// ==========================================
+
+document.getElementById('btnModo')
+  .addEventListener('click', cambiarModo);
+
+document.getElementById('btnBorrar')
+  .addEventListener('click', borrarTodo);
+
+// ==========================================
+// 16. IMPORTAR FONDO
+// ==========================================
+
+document.getElementById('btnFondo')
+  .addEventListener('click', () => {
+
+    document.getElementById('archivoFondo').click();
+  });
+
+
+document.getElementById('archivoFondo')
+  .addEventListener('change', (e) => {
+
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    const url = URL.createObjectURL(file);
+
+    new THREE.TextureLoader().load(url, (texture) => {
+
+      texture.colorSpace = THREE.SRGBColorSpace;
+
+      scene.background = texture;
+
+      URL.revokeObjectURL(url);
+
+    }, undefined, () => {
+
+      URL.revokeObjectURL(url);
+
+      alert('No se pudo cargar la imagen.');
+    });
+
+    // Permite volver a seleccionar el mismo archivo
+    e.target.value = '';
+  });
+
+// ==========================================
+// 17. GUARDAR CREACIÓN COMO PNG
+// ==========================================
+
+document.getElementById('btnGuardar')
+  .addEventListener('click', () => {
+
+    renderer.render(scene, camera);
+
+    renderer.domElement.toBlob((blob) => {
+
+      if (!blob) {
+        alert('No se pudo guardar la imagen.');
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+
+      a.href = url;
+      a.download = 'espuma-3d.png';
+
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 1500);
+
+    }, 'image/png');
+  });
+
+// ==========================================
+// 18. TECLADO - ESPACIO
+// ==========================================
+
+addEventListener('keydown', (e) => {
+
+  if (e.code === 'Space' && e.target.tagName !== 'BUTTON') {
+    e.preventDefault();
+    cambiarModo();
+  }
+});
+
+// ==========================================
+// 19. INICIO
+// ==========================================
+
+actualizarEstado();
+
+// ==========================================
+// 20. ANIMACIÓN
+// ==========================================
+
+function animar() {
+
+  requestAnimationFrame(animar);
+
+  controls.update();
+
+  renderer.render(scene, camera);
+}
+
+animar();
+
+// ==========================================
+// 21. REDIMENSIONAR
+// ==========================================
+
+addEventListener('resize', () => {
+
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+});
+
+</script>
+</body>
+</html>
