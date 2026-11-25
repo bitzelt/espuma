@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Espuma 3D</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; font-family: system-ui, sans-serif; }
+  #ui { position: fixed; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; color: #222; font-size: 14px; }
+  #ui button { font: inherit; padding: 6px 12px; border: 1px solid #222; background: #fff; cursor: pointer; }
+  #ui button:hover { background: #eee; }
+  #estado { line-height: 1.4; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="ui">
+  <button id="btnModo">Cambiar modo (espacio)</button>
+  <button id="btnBorrar">Borrar todo</button>
+  <div id="estado"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// 1. Escena, cámara y renderer
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 0, 4);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+// 2. Luces (hacen falta para que se note el volumen sobre el fondo blanco)
+scene.add(new THREE.HemisphereLight(0xffffff, 0x999999, 1.0));
+const sol = new THREE.DirectionalLight(0xffffff, 2.2);
+sol.position.set(3, 5, 4);
+scene.add(sol);
+
+// 3. Controles para girar
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// 4. La espuma: miles de esferitas en un solo objeto (InstancedMesh) para que no se ponga pesado
+const MAX = 30000;
+const espuma = new THREE.InstancedMesh(
+  new THREE.SphereGeometry(1, 12, 12),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
+  MAX
+);
+espuma.count = 0;
+scene.add(espuma);
+
+const m = new THREE.Matrix4();
+const color = new THREE.Color();
+
+function agregarBola(pos) {
+  if (espuma.count >= MAX) return;
+  const radio = 0.05 + Math.random() * 0.06;
+  m.makeScale(radio, radio, radio);
+  m.setPosition(
+    pos.x + (Math.random() - 0.5) * 0.04,
+    pos.y + (Math.random() - 0.5) * 0.04,
+    pos.z + (Math.random() - 0.5) * 0.04
+  );
+  espuma.setMatrixAt(espuma.count, m);
+  // tonos crema/blanco apenas distintos
+  const t = 0.88 + Math.random() * 0.12;
+  color.setRGB(t, t * 0.98, t * 0.92);
+  espuma.setColorAt(espuma.count, color);
+  espuma.count++;
+  espuma.instanceMatrix.needsUpdate = true;
+  espuma.instanceColor.needsUpdate = true;
+}
+
+// 5. Modos: dibujar o girar
+let dibujando = false;      // modo dibujar activado
+let trazoActivo = false;    // mouse apretado dibujando
+let profundidad = 0;        // qué tan lejos/cerca del centro dibujás (rueda del mouse)
+let ultimo = null;
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const plano = new THREE.Plane();
+const punto = new THREE.Vector3();
+
+// Punto 3D bajo el mouse, sobre un plano perpendicular a la cámara
+function puntoBajoMouse(e) {
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(mouse, camera);
+  const dir = camera.getWorldDirection(new THREE.Vector3());
+  const centro = controls.target.clone().addScaledVector(dir, profundidad);
+  plano.setFromNormalAndCoplanarPoint(dir.clone().negate(), centro);
+  return raycaster.ray.intersectPlane(plano, punto) ? punto.clone() : null;
+}
+
+function dibujarHasta(p) {
+  if (!ultimo) { agregarBola(p); ultimo = p; return; }
+  // rellenar el tramo entre el punto anterior y este para que no queden huecos
+  const dist = ultimo.distanceTo(p);
+  const pasos = Math.max(1, Math.ceil(dist / 0.04));
+  for (let i = 1; i <= pasos; i++) {
+    agregarBola(new THREE.Vector3().lerpVectors(ultimo, p, i / pasos));
+  }
+  ultimo = p;
+}
+
+const canvas = renderer.domElement;
+canvas.addEventListener('pointerdown', (e) => {
+  if (!dibujando) return;
+  trazoActivo = true;
+  ultimo = null;
+  canvas.setPointerCapture(e.pointerId);
+  const p = puntoBajoMouse(e);
+  if (p) dibujarHasta(p);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!dibujando || !trazoActivo) return;
+  const p = puntoBajoMouse(e);
+  if (p) dibujarHasta(p);
+});
+canvas.addEventListener('pointerup', () => { trazoActivo = false; ultimo = null; });
+
+// En modo dibujar, la rueda cambia la profundidad (en vez de hacer zoom)
+canvas.addEventListener('wheel', (e) => {
+  if (!dibujando) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  profundidad = THREE.MathUtils.clamp(profundidad + e.deltaY * 0.002, -3, 3);
+  actualizarEstado();
+}, { passive: false, capture: true });
+
+function cambiarModo() {
+  dibujando = !dibujando;
+  controls.enabled = !dibujando;
+  trazoActivo = false;
+  actualizarEstado();
+}
+
+function borrarTodo() {
+  espuma.count = 0;
+}
+
+const estado = document.getElementById('estado');
+function actualizarEstado() {
+  estado.innerHTML = dibujando
+    ? `Modo: <b>dibujar</b><br>Rueda: profundidad (${profundidad.toFixed(1)})`
+    : `Modo: <b>girar</b><br>Arrastrá para girar, rueda para zoom`;
+}
+
+document.getElementById('btnModo').addEventListener('click', cambiarModo);
+document.getElementById('btnBorrar').addEventListener('click', borrarTodo);
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); cambiarModo(); }
+});
+actualizarEstado();
+
+// 6. Loop de animación
+function animar() {
+  requestAnimationFrame(animar);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animar();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
