@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -7,21 +6,32 @@
 <title>Espuma 3D</title>
 
 <style>
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
 html, body {
   margin: 0;
   height: 100%;
   background: #fff;
   overflow: hidden;
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+}
+
+canvas {
+  touch-action: none;
+  display: block;
 }
 
 #ui {
   position: fixed;
   top: 12px;
   left: 12px;
+  right: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -29,36 +39,149 @@ html, body {
   color: #222;
   font-size: 14px;
   z-index: 10;
+  pointer-events: none;
 }
 
-#ui button {
+#ui > * {
+  pointer-events: auto;
+}
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#ui button,
+#ui label.btn-archivo {
   font: inherit;
-  padding: 9px 14px;
+  padding: 9px 13px;
   border: 1px solid #222;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.92);
+  color: #222;
   cursor: pointer;
   border-radius: 6px;
   touch-action: manipulation;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-#ui button:hover {
+#ui button:hover,
+#ui label.btn-archivo:hover {
   background: #eee;
+}
+
+#ui button:active,
+#ui label.btn-archivo:active {
+  background: #ddd;
 }
 
 #ui input[type="file"] {
   display: none;
 }
 
-#estado {
-  line-height: 1.5;
-  background: rgba(255,255,255,0.85);
-  padding: 6px 10px;
+.herramientas {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.paleta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #222;
   border-radius: 6px;
 }
 
-canvas {
-  touch-action: none;
-  display: block;
+.swatch {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #444;
+  border-radius: 5px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+
+.swatch.activo {
+  outline: 2px solid #000;
+  outline-offset: 2px;
+  transform: scale(1.06);
+}
+
+.swatch.metal {
+  background: linear-gradient(135deg, #ffffff 0%, #9fa6b2 45%, #e5e7eb 65%, #525866 100%);
+}
+
+.prof-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #222;
+  border-radius: 6px;
+}
+
+.prof-box input[type="range"] {
+  width: 110px;
+  accent-color: #222;
+  touch-action: pan-x;
+}
+
+@media (max-width: 600px) {
+  #ui {
+    top: 10px;
+    bottom: 12px;
+    left: 10px;
+    right: 10px;
+    justify-content: space-between;
+    font-size: 13px;
+  }
+
+  .herramientas {
+    order: 1;
+    width: 100%;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .acciones {
+    order: 2;
+    width: 100%;
+  }
+
+  .acciones button,
+  .acciones label.btn-archivo {
+    flex: 1 1 46%;
+    padding: 10px 8px;
+  }
+
+  .paleta {
+    gap: 5px;
+    padding: 5px;
+  }
+
+  .swatch {
+    width: 27px;
+    height: 27px;
+  }
+
+  .prof-box {
+    flex-direction: column;
+    align-items: stretch;
+    width: 135px;
+    gap: 4px;
+  }
+
+  .prof-box input[type="range"] {
+    width: 100%;
+  }
 }
 </style>
 
@@ -75,37 +198,42 @@ canvas {
 <body>
 
 <div id="ui">
-  <button id="btnModo">Modo: Dibujar / Mover</button>
-  <button id="btnFondo">Importar fondo</button>
+  <div class="acciones">
+    <button id="btnModo" type="button">Dibujar</button>
+    <label class="btn-archivo" for="archivoFondo">Fondo</label>
+    <button id="btnFondoBlanco" type="button" style="display: none;">Quitar fondo</button>
+    <button id="btnGuardar" type="button">Guardar</button>
+    <button id="btnBorrar" type="button">Borrar</button>
+  </div>
+
   <input id="archivoFondo" type="file" accept="image/*">
-  <button id="btnGuardar">Guardar creación</button>
-  <button id="btnBorrar">Borrar todo</button>
-  <div id="estado"></div>
+
+  <div class="herramientas">
+    <div class="paleta" id="paleta"></div>
+
+    <div class="prof-box" id="profBox">
+      <label for="sliderProf">Profundidad: <span id="valProf">0.0</span></label>
+      <input id="sliderProf" type="range" min="-3" max="3" step="0.1" value="0">
+    </div>
+  </div>
 </div>
 
 <script type="module">
-
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// 1. ESCENA
-
+// 1. ESCENA Y CÁMARA
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
 
-const camera = new THREE.PerspectiveCamera(
-  50, innerWidth / innerHeight, 0.1, 100
-);
-
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
 camera.position.set(0, 0, 4);
 
 // 2. RENDERER
-
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
   preserveDrawingBuffer: true
 });
-
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
@@ -113,358 +241,351 @@ document.body.appendChild(renderer.domElement);
 const canvas = renderer.domElement;
 canvas.style.touchAction = 'none';
 
+// Entorno sintético liviano para reflejos del color metalizado
+function crearEntornoReflejo() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 128;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, c.height);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.5, '#b8c0cc');
+  grad.addColorStop(1, '#5a606a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, c.width, c.height);
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+  ctx.beginPath();
+  ctx.ellipse(70, 35, 36, 14, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const rt = pmrem.fromEquirectangular(tex);
+  tex.dispose();
+  pmrem.dispose();
+  return rt.texture;
+}
+
+scene.environment = crearEntornoReflejo();
+scene.environmentIntensity = 0.7;
+
 // 3. ILUMINACIÓN
-
-scene.add(
-  new THREE.HemisphereLight(0xffffff, 0x999999, 1.0)
-);
-
-const sol = new THREE.DirectionalLight(0xffffff, 2.2);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 0.95));
+const sol = new THREE.DirectionalLight(0xffffff, 1.9);
 sol.position.set(3, 5, 4);
 scene.add(sol);
 
 // 4. CONTROLES
-
 const controls = new OrbitControls(camera, canvas);
-
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.enableRotate = true;
 controls.enableZoom = true;
 controls.enablePan = false;
-
 controls.minDistance = 1.5;
 controls.maxDistance = 15;
 controls.rotateSpeed = 0.8;
 controls.zoomSpeed = 0.8;
-
 controls.touches.ONE = THREE.TOUCH.ROTATE;
 controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
 controls.enabled = false;
 
-// 5. ESPUMA 3D
+// 5. PALETA VERTICAL + METALIZADO
+const COLORES = [
+  { nombre: 'Crema', hex: '#f7f3e8', metal: false },
+  { nombre: 'Negro', hex: '#222222', metal: false },
+  { nombre: 'Rojo', hex: '#e63946', metal: false },
+  { nombre: 'Naranja', hex: '#f77f00', metal: false },
+  { nombre: 'Amarillo', hex: '#fcbf49', metal: false },
+  { nombre: 'Verde', hex: '#2a9d8f', metal: false },
+  { nombre: 'Azul', hex: '#277da1', metal: false },
+  { nombre: 'Violeta', hex: '#7b2cbf', metal: false },
+  { nombre: 'Rosa', hex: '#ff70a6', metal: false },
+  { nombre: 'Metalizado', hex: '#d8dee9', metal: true }
+];
 
-const MAX = 30000;
+let colorActual = COLORES[0];
+const paletaEl = document.getElementById('paleta');
 
-const espuma = new THREE.InstancedMesh(
-  new THREE.SphereGeometry(1, 12, 12),
-  new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.9
-  }),
+COLORES.forEach((c, idx) => {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'swatch' + (c.metal ? ' metal' : '') + (idx === 0 ? ' activo' : '');
+  btn.title = c.nombre;
+  if (!c.metal) btn.style.backgroundColor = c.hex;
+
+  btn.addEventListener('click', () => {
+    colorActual = c;
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('activo'));
+    btn.classList.add('activo');
+  });
+  paletaEl.appendChild(btn);
+});
+
+// 6. ESPUMA 3D (MATE + METALIZADA)
+const MAX = 25000;
+const geoEsfera = new THREE.SphereGeometry(1, 12, 12);
+
+const espumaMate = new THREE.InstancedMesh(
+  geoEsfera,
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0.05 }),
   MAX
 );
+espumaMate.count = 0;
+scene.add(espumaMate);
 
-espuma.count = 0;
-scene.add(espuma);
+const espumaMetal = new THREE.InstancedMesh(
+  geoEsfera,
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0.88 }),
+  MAX
+);
+espumaMetal.count = 0;
+scene.add(espumaMetal);
 
 const m = new THREE.Matrix4();
 const color = new THREE.Color();
 
-// 6. AGREGAR ESFERITAS
+function agregarBola(pos, factorTamano = 1) {
+  const mesh = colorActual.metal ? espumaMetal : espumaMate;
+  if (mesh.count >= MAX) return;
 
-function agregarBola(pos) {
-  if (espuma.count >= MAX) return;
-
-  const radio = 0.05 + Math.random() * 0.06;
+  const radio = (0.045 + Math.random() * 0.055) * factorTamano;
+  const dispersion = 0.04 * factorTamano;
 
   m.makeScale(radio, radio, radio);
-
   m.setPosition(
-    pos.x + (Math.random() - 0.5) * 0.04,
-    pos.y + (Math.random() - 0.5) * 0.04,
-    pos.z + (Math.random() - 0.5) * 0.04
+    pos.x + (Math.random() - 0.5) * dispersion,
+    pos.y + (Math.random() - 0.5) * dispersion,
+    pos.z + (Math.random() - 0.5) * dispersion
   );
+  mesh.setMatrixAt(mesh.count, m);
 
-  espuma.setMatrixAt(espuma.count, m);
+  color.set(colorActual.hex);
+  color.offsetHSL(0, 0, (Math.random() - 0.5) * 0.06);
+  mesh.setColorAt(mesh.count, color);
 
-  const t = 0.88 + Math.random() * 0.12;
-
-  color.setRGB(t, t * 0.98, t * 0.92);
-  espuma.setColorAt(espuma.count, color);
-
-  espuma.count++;
-
-  espuma.instanceMatrix.needsUpdate = true;
-  espuma.instanceColor.needsUpdate = true;
+  mesh.count++;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 }
 
-// 7. SISTEMA DE DIBUJO
-
+// 7. DIBUJO UNIFICADO (DEDO Y MOUSE) + CRECIMIENTO AL MANTENER
 let dibujando = true;
 let trazoActivo = false;
+let punteroActivoId = null;
 let profundidad = 0;
 let ultimo = null;
+let puntoActual = null;
+let tiempoPresionado = 0;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const plano = new THREE.Plane();
 const punto = new THREE.Vector3();
+const dirAux = new THREE.Vector3();
+const centroAux = new THREE.Vector3();
+const normalAux = new THREE.Vector3();
 
-// 8. POSICIÓN DEL DEDO O MOUSE
-
-function puntoBajoMouse(e) {
+function puntoBajoPuntero(e) {
   const rect = canvas.getBoundingClientRect();
-
   mouse.set(
     ((e.clientX - rect.left) / rect.width) * 2 - 1,
     -((e.clientY - rect.top) / rect.height) * 2 + 1
   );
 
   raycaster.setFromCamera(mouse, camera);
+  camera.getWorldDirection(dirAux);
+  centroAux.copy(controls.target).addScaledVector(dirAux, profundidad);
+  normalAux.copy(dirAux).negate();
+  plano.setFromNormalAndCoplanarPoint(normalAux, centroAux);
 
-  const dir = camera.getWorldDirection(
-    new THREE.Vector3()
-  );
-
-  const centro = controls.target.clone()
-    .addScaledVector(dir, profundidad);
-
-  plano.setFromNormalAndCoplanarPoint(
-    dir.clone().negate(),
-    centro
-  );
-
-  const resultado = raycaster.ray.intersectPlane(
-    plano, punto
-  );
-
-  return resultado ? punto.clone() : null;
+  return raycaster.ray.intersectPlane(plano, punto) ? punto.clone() : null;
 }
 
-// 9. TRAZOS CONTINUOS
+function factorPorTiempo() {
+  return Math.min(1 + tiempoPresionado * 1.1, 3.2);
+}
 
 function dibujarHasta(p) {
+  const factor = factorPorTiempo();
   if (!ultimo) {
-    agregarBola(p);
+    agregarBola(p, factor);
     ultimo = p;
     return;
   }
 
   const dist = ultimo.distanceTo(p);
-  const pasos = Math.max(1, Math.ceil(dist / 0.04));
+  const pasoBase = 0.038 * Math.max(1, factor * 0.7);
+  const pasos = Math.max(1, Math.ceil(dist / pasoBase));
 
   for (let i = 1; i <= pasos; i++) {
-    const interpolado = new THREE.Vector3()
-      .lerpVectors(ultimo, p, i / pasos);
-
-    agregarBola(interpolado);
+    const interpolado = new THREE.Vector3().lerpVectors(ultimo, p, i / pasos);
+    agregarBola(interpolado, factor);
   }
-
   ultimo = p;
 }
 
-// 10. DIBUJO CON MOUSE
-
 canvas.addEventListener('pointerdown', (e) => {
-  if (!dibujando || e.pointerType === 'touch') return;
+  if (!dibujando || trazoActivo) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
 
   e.preventDefault();
   trazoActivo = true;
+  punteroActivoId = e.pointerId;
+  tiempoPresionado = 0;
   ultimo = null;
 
   try {
     canvas.setPointerCapture(e.pointerId);
-  } catch (error) {}
+  } catch (err) {}
 
-  const p = puntoBajoMouse(e);
-  if (p) dibujarHasta(p);
+  const p = puntoBajoPuntero(e);
+  if (p) {
+    puntoActual = p;
+    dibujarHasta(p);
+  }
 }, { passive: false });
 
 canvas.addEventListener('pointermove', (e) => {
-  if (!dibujando || !trazoActivo || e.pointerType === 'touch') return;
+  if (!dibujando || !trazoActivo || e.pointerId !== punteroActivoId) return;
 
   e.preventDefault();
-
-  const p = puntoBajoMouse(e);
-  if (p) dibujarHasta(p);
+  const p = puntoBajoPuntero(e);
+  if (p) {
+    puntoActual = p;
+    dibujarHasta(p);
+  }
 }, { passive: false });
 
-function finalizarTrazo() {
+function finalizarTrazo(e) {
+  if (e && punteroActivoId !== null && e.pointerId !== undefined && e.pointerId !== punteroActivoId) {
+    return;
+  }
   trazoActivo = false;
+  punteroActivoId = null;
   ultimo = null;
+  puntoActual = null;
+  tiempoPresionado = 0;
 }
 
 canvas.addEventListener('pointerup', finalizarTrazo);
 canvas.addEventListener('pointercancel', finalizarTrazo);
-canvas.addEventListener('lostpointercapture', finalizarTrazo);
+canvas.addEventListener('lostpointercapture', () => finalizarTrazo());
 
-// 11. DIBUJO TÁCTIL DEDICADO
+// Previene scroll/rebote en Safari iOS y Android WebView mientras dibujás
+canvas.addEventListener('touchstart', (e) => { if (dibujando) e.preventDefault(); }, { passive: false });
+canvas.addEventListener('touchmove', (e) => { if (dibujando) e.preventDefault(); }, { passive: false });
 
-let dedoDibujoId = null;
+// 8. PROFUNDIDAD (RUEDA Y SLIDER)
+const sliderProf = document.getElementById('sliderProf');
+const valProf = document.getElementById('valProf');
+const profBox = document.getElementById('profBox');
 
-function posicionDesdeTouch(touch) {
-  return {
-    clientX: touch.clientX,
-    clientY: touch.clientY
-  };
+function setProfundidad(nuevoValor) {
+  profundidad = THREE.MathUtils.clamp(nuevoValor, -3, 3);
+  sliderProf.value = profundidad.toFixed(1);
+  valProf.textContent = profundidad.toFixed(1);
 }
-
-canvas.addEventListener('touchstart', (e) => {
-  if (!dibujando || e.touches.length !== 1) return;
-
-  e.preventDefault();
-
-  const touch = e.changedTouches[0];
-  dedoDibujoId = touch.identifier;
-
-  trazoActivo = true;
-  ultimo = null;
-
-  const p = puntoBajoMouse(posicionDesdeTouch(touch));
-  if (p) dibujarHasta(p);
-}, { passive: false });
-
-canvas.addEventListener('touchmove', (e) => {
-  if (!dibujando || dedoDibujoId === null) return;
-
-  e.preventDefault();
-
-  for (const touch of e.changedTouches) {
-    if (touch.identifier !== dedoDibujoId) continue;
-
-    const p = puntoBajoMouse(posicionDesdeTouch(touch));
-    if (p) dibujarHasta(p);
-    break;
-  }
-}, { passive: false });
-
-function finalizarTouchDibujo(e) {
-  if (dedoDibujoId === null) return;
-
-  for (const touch of e.changedTouches) {
-    if (touch.identifier === dedoDibujoId) {
-      dedoDibujoId = null;
-      finalizarTrazo();
-      break;
-    }
-  }
-}
-
-canvas.addEventListener('touchend', finalizarTouchDibujo, {
-  passive: false
-});
-
-canvas.addEventListener('touchcancel', finalizarTouchDibujo, {
-  passive: false
-});
-
-// 12. PROFUNDIDAD CON RUEDA DEL MOUSE
 
 canvas.addEventListener('wheel', (e) => {
   if (!dibujando) return;
-
   e.preventDefault();
   e.stopImmediatePropagation();
-
-  profundidad = THREE.MathUtils.clamp(
-    profundidad + e.deltaY * 0.002, -3, 3
-  );
-
-  actualizarEstado();
+  setProfundidad(profundidad + e.deltaY * 0.002);
 }, { passive: false, capture: true });
 
-// 13. CAMBIAR MODO
+sliderProf.addEventListener('input', (e) => {
+  setProfundidad(parseFloat(e.target.value));
+});
+
+// 9. MODOS Y ACCIONES
+const btnModo = document.getElementById('btnModo');
 
 function cambiarModo() {
   dibujando = !dibujando;
-
   controls.enabled = !dibujando;
-
-  trazoActivo = false;
-  dedoDibujoId = null;
-  ultimo = null;
-
-  actualizarEstado();
+  finalizarTrazo();
+  btnModo.textContent = dibujando ? 'Dibujar' : 'Mover';
+  profBox.style.display = dibujando ? 'flex' : 'none';
 }
-
-// 14. BORRAR
 
 function borrarTodo() {
-  espuma.count = 0;
-  espuma.instanceMatrix.needsUpdate = true;
-  espuma.instanceColor.needsUpdate = true;
+  espumaMate.count = 0;
+  espumaMetal.count = 0;
+  espumaMate.instanceMatrix.needsUpdate = true;
+  espumaMetal.instanceMatrix.needsUpdate = true;
 }
 
-// 15. ESTADO
+btnModo.addEventListener('click', cambiarModo);
+document.getElementById('btnBorrar').addEventListener('click', borrarTodo);
 
-const estado = document.getElementById('estado');
+// 10. IMPORTAR Y QUITAR FONDO
+const archivoFondo = document.getElementById('archivoFondo');
+const btnFondoBlanco = document.getElementById('btnFondoBlanco');
+let urlFondoActual = null;
 
-function actualizarEstado() {
-  if (dibujando) {
-    estado.innerHTML =
-      `<b>Modo: Dibujar</b><br>
-       Arrastrá el dedo para crear espuma`;
-  } else {
-    estado.innerHTML =
-      `<b>Modo: Mover</b><br>
-       Un dedo: rotar<br>
-       Dos dedos: zoom`;
+archivoFondo.addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  const nuevaUrl = URL.createObjectURL(file);
+
+  new THREE.TextureLoader().load(nuevaUrl, (texture) => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    if (scene.background && scene.background.isTexture) {
+      scene.background.dispose();
+    }
+    if (urlFondoActual) URL.revokeObjectURL(urlFondoActual);
+    urlFondoActual = nuevaUrl;
+    scene.background = texture;
+    btnFondoBlanco.style.display = '';
+  }, undefined, () => {
+    URL.revokeObjectURL(nuevaUrl);
+    alert('No se pudo cargar la imagen.');
+  });
+
+  e.target.value = '';
+});
+
+btnFondoBlanco.addEventListener('click', () => {
+  if (scene.background && scene.background.isTexture) {
+    scene.background.dispose();
   }
-}
+  if (urlFondoActual) {
+    URL.revokeObjectURL(urlFondoActual);
+    urlFondoActual = null;
+  }
+  scene.background = new THREE.Color(0xffffff);
+  btnFondoBlanco.style.display = 'none';
+});
 
-// 16. BOTONES
+// 11. GUARDAR PNG
+document.getElementById('btnGuardar').addEventListener('click', () => {
+  controls.update();
+  renderer.render(scene, camera);
 
-document.getElementById('btnModo')
-  .addEventListener('click', cambiarModo);
+  renderer.domElement.toBlob((blob) => {
+    if (!blob) {
+      alert('No se pudo guardar la imagen.');
+      return;
+    }
 
-document.getElementById('btnBorrar')
-  .addEventListener('click', borrarTodo);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'espuma-3d.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }, 'image/png');
+});
 
-// 17. IMPORTAR FONDO
-
-document.getElementById('btnFondo')
-  .addEventListener('click', () => {
-    document.getElementById('archivoFondo').click();
-  });
-
-document.getElementById('archivoFondo')
-  .addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const url = URL.createObjectURL(file);
-
-    new THREE.TextureLoader().load(url, (texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      scene.background = texture;
-      URL.revokeObjectURL(url);
-    }, undefined, () => {
-      URL.revokeObjectURL(url);
-      alert('No se pudo cargar la imagen.');
-    });
-
-    e.target.value = '';
-  });
-
-// 18. GUARDAR PNG
-
-document.getElementById('btnGuardar')
-  .addEventListener('click', () => {
-    renderer.render(scene, camera);
-
-    renderer.domElement.toBlob((blob) => {
-      if (!blob) {
-        alert('No se pudo guardar la imagen.');
-        return;
-      }
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-
-      a.href = url;
-      a.download = 'espuma-3d.png';
-
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
-    }, 'image/png');
-  });
-
-// 19. TECLADO
-
+// 12. TECLADO
 addEventListener('keydown', (e) => {
   if (e.code === 'Space' && e.target.tagName !== 'BUTTON') {
     e.preventDefault();
@@ -472,30 +593,34 @@ addEventListener('keydown', (e) => {
   }
 });
 
-// 20. INICIO
-
-actualizarEstado();
-
-// 21. ANIMACIÓN
+// 13. LOOP DE ANIMACIÓN
+const clock = new THREE.Clock();
 
 function animar() {
   requestAnimationFrame(animar);
+  const dt = clock.getDelta();
+
+  if (dibujando && trazoActivo && puntoActual) {
+    tiempoPresionado += dt;
+    const factor = factorPorTiempo();
+    if (Math.random() < 0.75) {
+      agregarBola(puntoActual, factor);
+    }
+  }
+
   controls.update();
   renderer.render(scene, camera);
 }
 
 animar();
 
-// 22. REDIMENSIONAR
-
+// 14. REDIMENSIONAR
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 });
-
 </script>
 </body>
 </html>
