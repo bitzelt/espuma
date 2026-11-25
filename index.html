@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,12 +6,54 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Espuma 3D</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; font-family: system-ui, sans-serif; }
-  #ui { position: fixed; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; color: #222; font-size: 14px; }
-  #ui button { font: inherit; padding: 6px 12px; border: 1px solid #222; background: #fff; cursor: pointer; }
-  #ui button:hover { background: #eee; }
-  #estado { line-height: 1.4; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #fff;
+    overflow: hidden;
+    font-family: system-ui, sans-serif;
+  }
+
+  #ui {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    color: #222;
+    font-size: 14px;
+    z-index: 10;
+  }
+
+  #ui button {
+    font: inherit;
+    padding: 6px 12px;
+    border: 1px solid #222;
+    background: #fff;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  #ui button:hover {
+    background: #eee;
+  }
+
+  #ui input[type="file"] {
+    display: none;
+  }
+
+  #estado {
+    line-height: 1.4;
+  }
+
+  canvas {
+    touch-action: none;
+    display: block;
+  }
 </style>
+
 <script type="importmap">
 {
   "imports": {
@@ -20,9 +63,14 @@
 }
 </script>
 </head>
+
 <body>
+
 <div id="ui">
   <button id="btnModo">Cambiar modo (espacio)</button>
+  <button id="btnFondo">Importar fondo</button>
+  <input id="archivoFondo" type="file" accept="image/*">
+  <button id="btnGuardar">Guardar creación</button>
   <button id="btnBorrar">Borrar todo</button>
   <div id="estado"></div>
 </div>
@@ -35,16 +83,22 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
 
-const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(
+  50, innerWidth / innerHeight, 0.1, 100
+);
 camera.position.set(0, 0, 4);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  preserveDrawingBuffer: true
+});
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-// 2. Luces (hacen falta para que se note el volumen sobre el fondo blanco)
+// 2. Luces
 scene.add(new THREE.HemisphereLight(0xffffff, 0x999999, 1.0));
+
 const sol = new THREE.DirectionalLight(0xffffff, 2.2);
 sol.position.set(3, 5, 4);
 scene.add(sol);
@@ -52,14 +106,21 @@ scene.add(sol);
 // 3. Controles para girar
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.enabled = false;
+renderer.domElement.style.touchAction = "none";
 
-// 4. La espuma: miles de esferitas en un solo objeto (InstancedMesh) para que no se ponga pesado
+// 4. Espuma 3D
 const MAX = 30000;
+
 const espuma = new THREE.InstancedMesh(
   new THREE.SphereGeometry(1, 12, 12),
-  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
+  new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.9
+  }),
   MAX
 );
+
 espuma.count = 0;
 scene.add(espuma);
 
@@ -68,27 +129,34 @@ const color = new THREE.Color();
 
 function agregarBola(pos) {
   if (espuma.count >= MAX) return;
+
   const radio = 0.05 + Math.random() * 0.06;
+
   m.makeScale(radio, radio, radio);
+
   m.setPosition(
     pos.x + (Math.random() - 0.5) * 0.04,
     pos.y + (Math.random() - 0.5) * 0.04,
     pos.z + (Math.random() - 0.5) * 0.04
   );
+
   espuma.setMatrixAt(espuma.count, m);
-  // tonos crema/blanco apenas distintos
+
+  // Tonos crema/blanco ligeramente distintos
   const t = 0.88 + Math.random() * 0.12;
   color.setRGB(t, t * 0.98, t * 0.92);
+
   espuma.setColorAt(espuma.count, color);
   espuma.count++;
+
   espuma.instanceMatrix.needsUpdate = true;
   espuma.instanceColor.needsUpdate = true;
 }
 
-// 5. Modos: dibujar o girar
-let dibujando = false;      // modo dibujar activado
-let trazoActivo = false;    // mouse apretado dibujando
-let profundidad = 0;        // qué tan lejos/cerca del centro dibujás (rueda del mouse)
+// 5. Modo dibujar o girar
+let dibujando = true;
+let trazoActivo = false;
+let profundidad = 0;
 let ultimo = null;
 
 const raycaster = new THREE.Raycaster();
@@ -96,52 +164,98 @@ const mouse = new THREE.Vector2();
 const plano = new THREE.Plane();
 const punto = new THREE.Vector3();
 
-// Punto 3D bajo el mouse, sobre un plano perpendicular a la cámara
 function puntoBajoMouse(e) {
-  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  mouse.set(
+    (e.clientX / innerWidth) * 2 - 1,
+    -(e.clientY / innerHeight) * 2 + 1
+  );
+
   raycaster.setFromCamera(mouse, camera);
+
   const dir = camera.getWorldDirection(new THREE.Vector3());
   const centro = controls.target.clone().addScaledVector(dir, profundidad);
-  plano.setFromNormalAndCoplanarPoint(dir.clone().negate(), centro);
-  return raycaster.ray.intersectPlane(plano, punto) ? punto.clone() : null;
+
+  plano.setFromNormalAndCoplanarPoint(
+    dir.clone().negate(),
+    centro
+  );
+
+  return raycaster.ray.intersectPlane(plano, punto)
+    ? punto.clone()
+    : null;
 }
 
 function dibujarHasta(p) {
-  if (!ultimo) { agregarBola(p); ultimo = p; return; }
-  // rellenar el tramo entre el punto anterior y este para que no queden huecos
+  if (!ultimo) {
+    agregarBola(p);
+    ultimo = p;
+    return;
+  }
+
+  // Rellenar el tramo para evitar huecos
   const dist = ultimo.distanceTo(p);
   const pasos = Math.max(1, Math.ceil(dist / 0.04));
+
   for (let i = 1; i <= pasos; i++) {
-    agregarBola(new THREE.Vector3().lerpVectors(ultimo, p, i / pasos));
+    agregarBola(
+      new THREE.Vector3().lerpVectors(ultimo, p, i / pasos)
+    );
   }
+
   ultimo = p;
 }
 
+// 6. Mouse y pantalla táctil
 const canvas = renderer.domElement;
+
 canvas.addEventListener('pointerdown', (e) => {
   if (!dibujando) return;
+
+  e.preventDefault();
   trazoActivo = true;
   ultimo = null;
+
   canvas.setPointerCapture(e.pointerId);
+
   const p = puntoBajoMouse(e);
   if (p) dibujarHasta(p);
 });
+
 canvas.addEventListener('pointermove', (e) => {
   if (!dibujando || !trazoActivo) return;
+
+  e.preventDefault();
+
   const p = puntoBajoMouse(e);
   if (p) dibujarHasta(p);
 });
-canvas.addEventListener('pointerup', () => { trazoActivo = false; ultimo = null; });
 
-// En modo dibujar, la rueda cambia la profundidad (en vez de hacer zoom)
+canvas.addEventListener('pointerup', () => {
+  trazoActivo = false;
+  ultimo = null;
+});
+
+canvas.addEventListener('pointercancel', () => {
+  trazoActivo = false;
+  ultimo = null;
+});
+
+// Rueda: cambia la profundidad en modo dibujo
 canvas.addEventListener('wheel', (e) => {
   if (!dibujando) return;
+
   e.preventDefault();
   e.stopImmediatePropagation();
-  profundidad = THREE.MathUtils.clamp(profundidad + e.deltaY * 0.002, -3, 3);
+
+  profundidad = THREE.MathUtils.clamp(
+    profundidad + e.deltaY * 0.002,
+    -3, 3
+  );
+
   actualizarEstado();
 }, { passive: false, capture: true });
 
+// Cambiar modo
 function cambiarModo() {
   dibujando = !dibujando;
   controls.enabled = !dibujando;
@@ -149,37 +263,98 @@ function cambiarModo() {
   actualizarEstado();
 }
 
+// Borrar espuma
 function borrarTodo() {
   espuma.count = 0;
+  espuma.instanceMatrix.needsUpdate = true;
 }
 
+// Estado
 const estado = document.getElementById('estado');
+
 function actualizarEstado() {
   estado.innerHTML = dibujando
     ? `Modo: <b>dibujar</b><br>Rueda: profundidad (${profundidad.toFixed(1)})`
     : `Modo: <b>girar</b><br>Arrastrá para girar, rueda para zoom`;
 }
 
-document.getElementById('btnModo').addEventListener('click', cambiarModo);
-document.getElementById('btnBorrar').addEventListener('click', borrarTodo);
-addEventListener('keydown', (e) => {
-  if (e.code === 'Space') { e.preventDefault(); cambiarModo(); }
+// 7. Botones
+document.getElementById('btnModo')
+  .addEventListener('click', cambiarModo);
+
+document.getElementById('btnBorrar')
+  .addEventListener('click', borrarTodo);
+
+// Importar fotografía de fondo
+document.getElementById('btnFondo').addEventListener('click', () => {
+  document.getElementById('archivoFondo').click();
 });
+
+document.getElementById('archivoFondo')
+  .addEventListener('change', (e) => {
+
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+
+  new THREE.TextureLoader().load(url, (texture) => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    scene.background = texture;
+    URL.revokeObjectURL(url);
+  }, undefined, () => {
+    URL.revokeObjectURL(url);
+    alert('No se pudo cargar la imagen.');
+  });
+});
+
+// Guardar creación como PNG
+document.getElementById('btnGuardar').addEventListener('click', () => {
+  renderer.render(scene, camera);
+
+  renderer.domElement.toBlob((blob) => {
+    if (!blob) {
+      alert('No se pudo guardar la imagen.');
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+
+    a.href = url;
+    a.download = 'espuma-3d.png';
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+});
+
+// Barra espaciadora para cambiar de modo
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    cambiarModo();
+  }
+});
+
 actualizarEstado();
 
-// 6. Loop de animación
+// 8. Animación
 function animar() {
   requestAnimationFrame(animar);
   controls.update();
   renderer.render(scene, camera);
 }
+
 animar();
 
+// Ajustar al cambiar tamaño
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
 </script>
+
 </body>
 </html>
